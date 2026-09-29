@@ -2,27 +2,26 @@ import os
 import numpy as np
 from django.core.management.base import BaseCommand
 from movie.models import Movie
-from openai import OpenAI
+from huggingface_hub import InferenceClient
 from dotenv import load_dotenv
 
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
 class Command(BaseCommand):
-    help = "Compare two movies and optionally a prompt using OpenAI embeddings"
+    help = "Compare two movies and optionally a prompt using Hugging Face embeddings"
 
     def handle(self, *args, **kwargs):
-        # Load OpenAI API key
+        # Load Hugging Face access token
         load_dotenv('../openAI.env')
-        client = OpenAI(api_key=os.environ.get('openai_apikey'))
+        client = InferenceClient(token=os.environ.get('hf_token'))
 
         # Cambia estos títulos por cualquier par de películas que quieras comparar
         movie1 = Movie.objects.get(title="Carmencita")
         movie2 = Movie.objects.get(title="The Sea")
 
         def get_embedding(text):
-            response = client.embeddings.create(
-                input=[text],
-                model="text-embedding-3-small"
-            )
-            return np.array(response.data[0].embedding, dtype=np.float32)
+            embedding = client.feature_extraction(text, model=EMBEDDING_MODEL)
+            return np.array(embedding, dtype=np.float32)
 
         def cosine_similarity(a, b):
             return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))

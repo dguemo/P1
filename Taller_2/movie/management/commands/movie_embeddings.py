@@ -2,27 +2,26 @@ import os
 import numpy as np
 from django.core.management.base import BaseCommand
 from movie.models import Movie
-from openai import OpenAI
+from huggingface_hub import InferenceClient
 from dotenv import load_dotenv
+
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 class Command(BaseCommand):
     help = "Generate and store embeddings for all movies in the database"
 
     def handle(self, *args, **kwargs):
-        # Load OpenAI API key
+        # Load Hugging Face access token
         load_dotenv('../openAI.env')
-        client = OpenAI(api_key=os.environ.get('openai_apikey'))
+        client = InferenceClient(token=os.environ.get('hf_token'))
 
         # Fetch all movies from the database
         movies = Movie.objects.all()
         self.stdout.write(f"Found {movies.count()} movies in the database")
 
         def get_embedding(text):
-            response = client.embeddings.create(
-                input=[text],
-                model="text-embedding-3-small"
-            )
-            return np.array(response.data[0].embedding, dtype=np.float32)
+            embedding = client.feature_extraction(text, model=EMBEDDING_MODEL)
+            return np.array(embedding, dtype=np.float32)
 
         # Iterate through movies and generate embeddings
         for movie in movies:

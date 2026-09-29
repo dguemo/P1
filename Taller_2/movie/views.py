@@ -9,8 +9,10 @@ import io
 import os
 import urllib, base64
 import numpy as np
-from openai import OpenAI
+from huggingface_hub import InferenceClient
 from dotenv import load_dotenv
+
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 def home(request):
     # búsqueda de películas
@@ -116,13 +118,10 @@ def recommend(request):
 
     if prompt:
         load_dotenv('../openAI.env')
-        client = OpenAI(api_key=os.environ.get('openai_apikey'))
+        client = InferenceClient(token=os.environ.get('hf_token'))
 
-        response = client.embeddings.create(
-            input=[prompt],
-            model="text-embedding-3-small"
-        )
-        prompt_emb = np.array(response.data[0].embedding, dtype=np.float32)
+        embedding = client.feature_extraction(prompt, model=EMBEDDING_MODEL)
+        prompt_emb = np.array(embedding, dtype=np.float32)
 
         for movie in Movie.objects.all():
             movie_emb = np.frombuffer(movie.emb, dtype=np.float32)

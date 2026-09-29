@@ -4,7 +4,9 @@ import numpy as np
 # Create your models here.
 
 def get_default_array():
-    default_arr = np.random.rand(1536).astype(np.float32)
+    # 384 = dimensión del modelo de embeddings de Hugging Face
+    # sentence-transformers/all-MiniLM-L6-v2
+    default_arr = np.random.rand(384).astype(np.float32)
     return default_arr.tobytes()
 
 class Movie(models.Model):

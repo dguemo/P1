@@ -1,27 +1,28 @@
 import os
-from openai import OpenAI
+from huggingface_hub import InferenceClient
 from django.core.management.base import BaseCommand
 from movie.models import Movie
 from dotenv import load_dotenv
 
 class Command(BaseCommand):
-    help = "Update movie descriptions using OpenAI API"
+    help = "Update movie descriptions using a Hugging Face text-generation model"
 
     def handle(self, *args, **kwargs):
         # Load environment variables from the .env file
         load_dotenv('../openAI.env')
 
-        # Initialize the OpenAI client with the API key
-        client = OpenAI(
-            api_key=os.environ.get('openai_apikey'),
+        # Initialize the Hugging Face inference client with the access token
+        client = InferenceClient(
+            token=os.environ.get('hf_token'),
         )
 
-        # Helper function to send prompt and get completion from OpenAI
-        def get_completion(prompt, model="gpt-3.5-turbo"):
+        # Helper function to send prompt and get completion from Hugging Face
+        def get_completion(prompt, model="meta-llama/Llama-3.1-8B-Instruct"):
             messages = [{"role": "user", "content": prompt}]
-            response = client.chat.completions.create(
+            response = client.chat_completion(
                 model=model,
                 messages=messages,
+                max_tokens=400,
                 temperature=0,  # No creativity, deterministic response
             )
             return response.choices[0].message.content.strip()
@@ -51,7 +52,7 @@ class Command(BaseCommand):
                 updated_description = get_completion(prompt)
 
                 # Save the new description to the database
-                movie.description = updated_description
+                movie.description = updated_description[:1500]
                 movie.save()
 
                 self.stdout.write(self.style.SUCCESS(f"Updated: {movie.title}"))
@@ -60,5 +61,5 @@ class Command(BaseCommand):
                 self.stderr.write(f"Failed for {movie.title}: {str(e)}")
 
             # NO DEBES QUITAR EL BREAK: solo se actualiza la primera película para evitar
-            # un consumo elevado de la API de OpenAI.
+            # un consumo elevado de la API.
             break

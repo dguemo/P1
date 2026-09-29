@@ -1,20 +1,19 @@
 import os
-import requests
-from openai import OpenAI
+from huggingface_hub import InferenceClient
 from django.core.management.base import BaseCommand
 from movie.models import Movie
 from dotenv import load_dotenv
 
 class Command(BaseCommand):
-    help = "Generate images with OpenAI and update movie image field"
+    help = "Generate images with a Hugging Face text-to-image model and update movie image field"
 
     def handle(self, *args, **kwargs):
         # Load environment variables from the .env file
         load_dotenv('../openAI.env')
 
-        # Initialize the OpenAI client with the API key
-        client = OpenAI(
-            api_key=os.environ.get('openai_apikey'),
+        # Initialize the Hugging Face inference client with the access token
+        client = InferenceClient(
+            token=os.environ.get('hf_token'),
         )
         # Folder to save images
         images_folder = 'media/movie/images/'
@@ -46,30 +45,20 @@ class Command(BaseCommand):
 
     def generate_and_download_image(self, client, movie_title, save_folder):
         """
-        Generates an image using OpenAI's DALL-E model and downloads it.
+        Generates an image using a Hugging Face text-to-image model.
         Returns the relative image path or raises an exception.
         """
         prompt = f"Movie poster of {movie_title}"
 
-        # Generate image with OpenAI
-        response = client.images.generate(
-            model="dall-e-2",
-            prompt=prompt,
-            size="256x256",
-            quality="standard",
-            n=1,
-        )
-        image_url = response.data[0].url
+        # Generate image with Hugging Face (FLUX.1-schnell)
+        image = client.text_to_image(prompt, model="black-forest-labs/FLUX.1-schnell")
 
         # Prepare the filename and full save path
         image_filename = f"m_{movie_title}.png"
         image_path_full = os.path.join(save_folder, image_filename)
 
-        # Download the image
-        image_response = requests.get(image_url)
-        image_response.raise_for_status()
-        with open(image_path_full, 'wb') as f:
-            f.write(image_response.content)
+        # Save the image
+        image.save(image_path_full)
 
         # Return relative path to be saved in the DB
         return os.path.join('movie/images', image_filename)
