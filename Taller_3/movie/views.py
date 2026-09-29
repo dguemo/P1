@@ -1,0 +1,138 @@
+from django.shortcuts import render
+from django.http import HttpResponse
+
+from .models import Movie
+
+import matplotlib.pyplot as plt
+import matplotlib
+import io
+import os
+import urllib, base64
+import numpy as np
+from huggingface_hub import InferenceClient
+from dotenv import load_dotenv
+
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
+def home(request):
+    # búsqueda de películas
+    searchTerm = request.GET.get('searchMovie')
+
+    # si se está buscando una película
+    if searchTerm:
+        # lista únicamente la(s) película(s) cuyo título contiene el nombre buscado
+        movies = Movie.objects.filter(title__icontains=searchTerm)
+    else:
+        # lista todas las películas de la base de datos
+        movies = Movie.objects.all()
+    return render(request, 'home.html', {'searchTerm':searchTerm, 'movies': movies})
+
+
+# Función para 'About'
+def about(request):
+    return render(request, 'about.html')
+
+def statistics_view(request):
+    matplotlib.use('Agg')
+
+    #====== Gráfica por año ======
+    years = Movie.objects.values_list('year', flat=True).distinct().order_by('year')  # Obtener todos los años de las películas
+    movie_counts_by_year = {}  # Crear un diccionario para almacenar la cantidad de películas por año
+    for year in years: # Contar la cantidad de películas por año
+        if year:
+            movies_in_year = Movie.objects.filter(year=year)
+        else:
+            movies_in_year = Movie.objects.filter(year__isnull=True)
+            year = "None"
+        count = movies_in_year.count()
+        movie_counts_by_year[year] = count
+
+    bar_width = 0.5 # Ancho de las barras
+    bar_spacing = 0.5 # Separación entre las barras
+    bar_positions = range(len(movie_counts_by_year)) # Posiciones de las barras
+
+    # Crear la gráfica de barras
+    plt.bar(bar_positions, movie_counts_by_year.values(), width=bar_width, align='center')
+    # Personalizar la gráfica
+    plt.title('Movies per year')
+    plt.xlabel('Year')
+    plt.ylabel('Number of movies')
+    plt.xticks(bar_positions, movie_counts_by_year.keys(), rotation=90)
+    # Ajustar el espaciado entre las barras
+    plt.subplots_adjust(bottom=0.3)
+    # Guardar la gráfica en un objeto BytesIO
+    buffer = io.BytesIO()
+    plt.savefig(buffer, format='png')
+    buffer.seek(0)
+    plt.close()
+
+    # Convertir la gráfica a base64
+    image_png = buffer.getvalue()
+    buffer.close()
+    year_graphic = base64.b64encode(image_png)
+    year_graphic = year_graphic.decode('utf-8')
+
+
+    # ====== Gráfica por género ======
+    movies = Movie.objects.values_list('genre', flat=True)
+    genre_counts = {}
+    for g in movies:
+        if g:
+            first_genre = g.split(",")[0].strip()  # tomar solo el primer género
+            genre_counts[first_genre] = genre_counts.get(first_genre, 0) + 1
+
+    plt.bar(range(len(genre_counts)), genre_counts.values(), width=0.5, align='center', color='green')
+    plt.title('Movies per genre (first only)')
+    plt.xlabel('Genre')
+    plt.ylabel('Number of movies')
+    plt.xticks(range(len(genre_counts)), genre_counts.keys(), rotation=90)
+    plt.subplots_adjust(bottom=0.3)
+
+    buffer = io.BytesIO()
+    plt.savefig(buffer, format='png')
+    buffer.seek(0)
+    plt.close()
+
+    image_png = buffer.getvalue()
+    buffer.close()
+    genre_graphic = base64.b64encode(image_png).decode('utf-8')
+
+
+    # Pasar ambas gráficas al template
+    return render(request, 'statistics.html', {
+        'year_graphic': year_graphic,
+        'genre_graphic': genre_graphic
+    })
+
+def signup(request):
+    email = request.GET.get('email')
+    return render(request, 'signup.html', {'email':email})
+
+def cosine_similarity(a, b):
+    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+
+def recommend(request):
+    prompt = request.GET.get('prompt')
+    best_movie = None
+    max_similarity = None
+
+    if prompt:
+        load_dotenv('../openAI.env')
+        client = InferenceClient(token=os.environ.get('hf_token'))
+
+        embedding = client.feature_extraction(prompt, model=EMBEDDING_MODEL)
+        prompt_emb = np.array(embedding, dtype=np.float32)
+
+        for movie in Movie.objects.all():
+            movie_emb = np.frombuffer(movie.emb, dtype=np.float32)
+            similarity = cosine_similarity(prompt_emb, movie_emb)
+
+            if max_similarity is None or similarity > max_similarity:
+                max_similarity = similarity
+                best_movie = movie
+
+    return render(request, 'recommend.html', {
+        'prompt': prompt,
+        'movie': best_movie,
+        'similarity': max_similarity,
+    })
